@@ -1,3 +1,5 @@
+# TwilioPythonUnusedNumberHunter
+
 Unused number hunter is Pyton based script to help you release (and save some $$$'s) on unused numbers that may be sitting in your Twilio account. 
 
 If you are in the habbit of buying Twlio numbers, using them for a project and then not relasing them this script will be the tool for you. 
@@ -18,5 +20,5 @@ What will happen:
 Happy Hunting!
 
 
-# TwilioPythonUnusedNumberHunter
+TL:DR : 
 Python based script to search your account for unused numbers and release them.

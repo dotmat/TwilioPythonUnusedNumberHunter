@@ -22,7 +22,7 @@ unusedSIDdictionary = []
 # Put Accountsid, AuthKey
 
 AccountSID = "AC..."
-AuthKey = "YOUR KEY"
+AuthKey = "YOURAUTHKEY"
 
 NumberOfDaysToExamine = 30 # How many days of calls should the script examine.
 print 'Getting details for Account: ' + AccountSID
@@ -60,9 +60,9 @@ try:
         print 'Gathering Call logs for this account, the start time is: ' + str(datetime.datetime.now().time())
         for c in calls:
             # If the to / From is blank or is a client we can skip the writing to the file as we only want actual numbers
-            if c.to.startswith( '+' ):
+            if c.to.startswith("+"):
                 text_file.write(c.to+"\n")
-            if c.from_.startswith( '+' )
+            if c.from_.startswith("+"):
                 text_file.write(c.from_+"\n")
             gc.collect()
 except:
@@ -80,9 +80,9 @@ with open("TwilioCallLog.txt") as connectedNumbers:
         #If the number is in the dictionary, we want to add 1 to the value for that number.
         # We also need to strip the + symbol from the log
         line = line.replace("\n","")
-            line = line.replace("+","")
-            try:
-                phoneNumberDictionary[int(line)]['Frequency'] += 1
+        line = line.replace("+","")
+        try:
+            phoneNumberDictionary[int(line)]['Frequency'] += 1
         except KeyError:
             pass
 

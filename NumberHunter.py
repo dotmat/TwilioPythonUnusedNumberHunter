@@ -1,114 +1,109 @@
-# This scripts jobs is to:
-# Get the list of phone numbers for an account, Get the list of call logs for a certain date period
-# Compare the phone numbers against the call list to see what numbers have not been used in that period
-# Present back to the user, the list of 'unused numbers'
-
-# Imports
-import sys, getopt
-from twilio.rest import TwilioRestClient
+"""
+This script gets a list of phone numbers for an account and a list of call logs
+for a certain date period. It then compares the phone numbers against the call
+list to see what numbers have not been used in that period and presents back to
+the user, the list of 'unused numbers' and outputs it to a .csv file. It also
+provides the option to delete these unused numbers
+"""
+__author__ = "mjenkinson, ptan"
 import datetime
-import itertools
-import re
-import hashlib
-from collections import defaultdict
+import csv
 import os
 import gc
-import json
+from twilio.rest import TwilioRestClient
 
-# Create a dictionary, for phone numbers to be hashed
-phoneNumberDictionary = {}
-unusedSIDdictionary = []
+ACCT = os.environ['TWILIO_ACCOUNT_SID']
+AUTH = os.environ['TWILIO_AUTH_TOKEN']
 
-# Put Accountsid, AuthKey
+# START_AFTER_DATE will get call logs from now going back to the date defined.
+# If you have a lot of calls you may want to select a shorter time window.
+START_AFTER_DATE = raw_input("Please type in the date to start from in YYYY-MM-DD format: ")
 
-AccountSID = "AC..."
-AuthKey = "YOURAUTHKEY"
+# print('Getting details for Account: ' + ACCT)
+client = TwilioRestClient(ACCT, AUTH)
 
-NumberOfDaysToExamine = 30 # How many days of calls should the script examine.
-print 'Getting details for Account: ' + AccountSID
+# Part One: Get all phone numbers for an account and write to a .csv file.
+print('Gathering Phone numbers for this account, the start time is: ' + str(
+    datetime.datetime.now().time()))
+START_TIME = datetime.datetime.now()
 
-# Part One, we need to get all the phone numbers for an account.
-# This involves making an API request, paging all the phone number pages and saving all the numbers into a text file for use later.
+with open("TwilioNumberList.csv", "w") as csvfile:
+    writer = csv.writer(csvfile, delimiter=',')
+    for number in client.phone_numbers.iter(page_size=1000):
+        sid = number.sid
+        number = number.phone_number.strip("+")
+        writer.writerow([number, sid])
+gc.collect()
 
-print 'Gathering Phone numbers for this account, the start time is: ' + str(datetime.datetime.now().time())
+print('Gathered all the phone numbers, stop time is: ' + str(
+    datetime.datetime.now().time()))
 
-client = TwilioRestClient(AccountSID, AuthKey)
+# Part Two: Get all call data after the specified date.
+print('Gathering call logs for this account, the start time is: ' + str(
+    datetime.datetime.now().time()))
 
-phoneNumbers = client.phone_numbers.iter()
+with open("TwilioCallLog.csv", "w") as csvfile:
+    writer = csv.writer(csvfile, delimiter=',')
+    # If the to / From is blank or is a client we can skip the writing to
+    # the file as we only want phone numbers.
+    for call in client.calls.iter(page_size=1000,
+                                  started_after=START_AFTER_DATE):
+        if call.to.startswith("+"):
+            writer.writerow([call.to.strip("+")])
+        if call.from_.startswith("+"):
+            writer.writerow([call.from_.strip("+")])
+gc.collect()
 
-#for each number in the account, write the number to a new line
-with open("TwilioNumbersInAccount.txt", "w") as text_file:
-    for p in phoneNumbers:
-        twilioPhoneNumber = p.phone_number.replace("+","")
-        phoneNumberDictionary[int(twilioPhoneNumber)] = {'PhoneSID': p.sid, 'Frequency': 0}
-        text_file.write(twilioPhoneNumber+":{'PhoneSID':'"+p.sid+"}\n")
+print('Gathered all the call logs, stop time is: ' + str(
+    datetime.datetime.now().time()))
 
-print 'Gathered all the phone numbers, stop time is: ' + str(datetime.datetime.now().time())
+# Part Three: Compare list of numbers owned to numbers in call logs and extract
+# owned numbers that have not been used.
+print('Scanning for matching phone numbers. Start time:' + str(
+    datetime.datetime.now().time()))
 
-# Part two involves getting the call data for a certain date range
-# Get the call logs from the account.
+CALL_LOG_SET = set()
+NUMBER_SET = set()
 
-TimeLimit = (datetime.datetime.now() + datetime.timedelta(-int(NumberOfDaysToExamine))).strftime('%Y-%m-%d')
-print "TimeLimit =" + TimeLimit
+with open("TwilioNumberList.csv") as csvfile:
+    number_list = csv.reader(csvfile, delimiter=',')
+    for number in number_list:
+        NUMBER_SET.add(number[0])
+    csvfile.close()
 
-calls = client.calls.iter(start_time=TimeLimit)
+with open("TwilioCallLog.csv") as callfile:
+    call_log = csv.reader(callfile, delimiter=',')
+    for number in call_log:
+        CALL_LOG_SET.add(number[0])
+    csvfile.close()
 
+UNUSED_LIST = list(NUMBER_SET - CALL_LOG_SET)
 
-count = 0
-try:
-    with open("TwilioCallLog.txt", "w") as text_file:
-        print 'Gathering Call logs for this account, the start time is: ' + str(datetime.datetime.now().time())
-        for c in calls:
-            # If the to / From is blank or is a client we can skip the writing to the file as we only want actual numbers
-            if c.to.startswith("+"):
-                text_file.write(c.to+"\n")
-            if c.from_.startswith("+"):
-                text_file.write(c.from_+"\n")
-            gc.collect()
-except:
-    print 'An error occurred, managed to get ' + str(count) + ' numbers from the request.'
-print 'Gathered all the call logs, stop time is: ' + str(datetime.datetime.now().time())
+print('Done scanning. End time:' + str(datetime.datetime.now().time()))
 
-# Now we have all the call logs and all the numbers in the account.
-# So we need to know if any of the numbers were NOT used to make or receive calls
+with open("UnusedNumbers.csv", "w") as csvfile:
+    writer = csv.writer(csvfile, delimiter=',')
+    writer.writerow(['Phone Number', 'Phone SID'])
+    with open("TwilioNumberList.csv", "r") as reference:
+        reader = csv.reader(reference)
+        numbers = {rows[0]: rows[1] for rows in reader}
+        for number in UNUSED_LIST:
+            UNUSED_NUMBERS = {number: numbers[number]}
+            writer.writerow([number, numbers[number]])
+gc.collect()
 
-print 'Scanning for matching phone numbers.'
-# Load the callLog file and begin comparing each number against our phoneNumberDictionary
-with open("TwilioCallLog.txt") as connectedNumbers:
-    for line in connectedNumbers:
-        #Each time we load a line, we want to compare this number with whats in the dictionary
-        #If the number is in the dictionary, we want to add 1 to the value for that number.
-        # We also need to strip the + symbol from the log
-        line = line.replace("\n","")
-        line = line.replace("+","")
-        try:
-            phoneNumberDictionary[int(line)]['Frequency'] += 1
-        except KeyError:
-            pass
+print('Script Finished running at: ' + str(datetime.datetime.now().time()))
+END_TIME = datetime.datetime.now()
+print('Total Time taken was', str(END_TIME - START_TIME))
 
-# Now we have a dictionary of Phone numbers and the number of times those numbers have been used.
-# As part of the dictionary, we also know which numbers have not been used.
-
-# Create a new file consisting of unused numbers
-with open("unusedTwilioNumbers.txt", "w") as text_file:
-    for phoneNumber, inner_dict in phoneNumberDictionary.iteritems():
-        if inner_dict['Frequency'] == 0:
-            text_file.write(str(phoneNumber) + "," + inner_dict['PhoneSID'] + "\n")
-            #print str(phoneNumber) + inner_dict['PhoneSID']
-            #Add the PhoneNumberSID to the unusedSIDdictionary
-            unusedSIDdictionary.append(inner_dict['PhoneSID'])
-
-# Now we have a dictionary of PhoneNumberSID's that have not been used
-# We want to report to the user they have X many unused numbers
-print 'Found ' + str(len(unusedSIDdictionary)) + ' unused numbers in account ' + AccountSID
-
-# Ask the user if we can remove these numbers from their account.
-numberRemoveAnswer = raw_input("Should I delete these unused numbers from the account? Y or N ")
-if (numberRemoveAnswer == 'Y') or (numberRemoveAnswer == 'y'):
-    print 'Removing unwanted numbers from your account, this may take a while...'
-    for NumberSIDToRemove in unusedSIDdictionary:
-        print 'Removing ' + NumberSIDToRemove
-        client.phone_numbers.delete(NumberSIDToRemove)
-    
-    print 'Finished removing unused numbers'
-print 'Script Finished running at: '+ str(datetime.datetime.now().time())
+# Part Four: Delete the Phone Numbers if the user says yes
+remove_number = input(
+    "Should I delete these unused numbers from the account? Y or N: ")
+if (remove_number == 'Y') or (remove_number == 'y'):
+    print('Removing unwanted numbers. This may take a while...')
+    for sid in UNUSED_LIST:
+        print('Removing ' + sid)
+        client.phone_numbers.delete(sid)
+    print('Finished removing unused numbers')
+else:
+    print("Did not remove any numbers")
